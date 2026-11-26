@@ -78,26 +78,31 @@ class SignificanceTestService(BaseModuleService):
         return {"ok": True, "message": f"批量检验完成，显著批次 {significant}", "total": len(pending_rows)}
 
     def produce_to_segment_slice(self, exp_code: str) -> dict[str, Any]:
-        """把显著检验结果推送给切片分析器，登记待计算切片。"""
+        """把显著检验结果推送给切片分析器，登记待计算切片（按维度注册表选默认维度值）。"""
         rows = [
             r for r in store.rows(self.MODULE)
             if r.get("实验编码") == exp_code and r.get("status") == "已检验"
         ]
         if not rows:
             return {"ok": False, "message": f"实验 {exp_code} 无已检验批次"}
+        from app.domain import dimension_values, supported_dimensions
+        dimension = supported_dimensions()[0]
+        value = dimension_values(dimension)[0]
         slice_rows = store.rows("segment_slice")
         slice_rows.append({
             "id": max((int(r.get("id", 0)) for r in slice_rows), default=0) + 1,
             "切片批次": f"SG-{exp_code}-{datetime.now(timezone.utc).timestamp():.0f}",
             "实验编码": exp_code,
-            "切片维度": "分组",
-            "切片值": "实验组/对照组",
-            "分组差异": rows[-1].get("置信区间", ""),
+            "切片维度": dimension,
+            "切片值": value,
+            "分组差异": "",
             "status": "待计算",
             "pending": True,
             "abnormal": False,
+            "数据版次": 1,
+            "数据状态": "现行",
         })
-        return {"ok": True, "message": f"切片批次已登记（覆盖 {len(rows)} 条检验结果）"}
+        return {"ok": True, "message": f"切片批次已登记（{dimension}={value}，覆盖 {len(rows)} 条检验结果）"}
 
     def consume_from_metric_compute(self, metric_code: str) -> list[dict[str, Any]]:
         """读取指标计算层该指标的完成作业，返回可检验窗口。"""
